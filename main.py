@@ -112,6 +112,7 @@ class MapTool:
         self.load_group_icons()
 
         self.drag_offset = (0, 0)
+        self.wheel_accum = 0.0
 
     def load_group_icons(self):
         for g in self.config.tile_groups + self.config.brush_groups:
@@ -194,7 +195,13 @@ class MapTool:
                         self.zoom = self.zoom_levels[min(len(self.zoom_levels)-1, self.zoom_levels.index(self.zoom)+1)]
                     self.clamp_camera()
                 else:
-                    self.cycle_selected_asset(-event.y)
+                    self.wheel_accum += event.y
+                    while self.wheel_accum >= 1:
+                        self.cycle_selected_asset(-1)
+                        self.wheel_accum -= 1
+                    while self.wheel_accum <= -1:
+                        self.cycle_selected_asset(1)
+                        self.wheel_accum += 1
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button in (4, 5):
                     delta = 1 if event.button == 4 else -1
@@ -261,6 +268,18 @@ class MapTool:
         max_y = max(-128, map_h - vis_h + 128)
         self.camera[0] = max(-128, min(self.camera[0], max_x))
         self.camera[1] = max(-128, min(self.camera[1], max_y))
+
+    def center_window(self, window):
+        window.update_idletasks()
+        w = window.winfo_width()
+        h = window.winfo_height()
+        px = self.tk_root.winfo_x()
+        py = self.tk_root.winfo_y()
+        pw = self.tk_root.winfo_width()
+        ph = self.tk_root.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
+        window.geometry(f"+{x}+{y}")
 
     def cycle_selected_asset(self, delta):
         groups = self.get_active_groups()
@@ -463,6 +482,7 @@ class MapTool:
             dlg.destroy()
 
         tk.Button(dlg, text='OK', command=apply).grid(row=4, column=0, columnspan=2, pady=5)
+        self.center_window(dlg)
 
     def open_save_map_dialog(self):
         os.makedirs('maps', exist_ok=True)
@@ -495,6 +515,7 @@ class MapTool:
             dlg.destroy()
 
         tk.Button(dlg, text='Save', command=save_action).pack(pady=5)
+        self.center_window(dlg)
 
     def open_load_map_dialog(self):
         os.makedirs('maps', exist_ok=True)
@@ -515,6 +536,7 @@ class MapTool:
             dlg.destroy()
 
         tk.Button(dlg, text='Load', command=load_action).pack(pady=5)
+        self.center_window(dlg)
 
     def clear_map_prompt(self):
         if self.unsaved_map:
