@@ -21,6 +21,9 @@ class AssetUI:
             x = bottom_rect.x + i * slot_w
             y = bottom_rect.y
             surface.blit(icon, (x, y))
+            # draw the numeric hotkey for this group
+            num_surf = self.app.font.render(str(g.key), True, (255, 255, 255))
+            surface.blit(num_surf, (x + 2, y + 2))
             if i == self.app.selected_group:
                 pygame.draw.rect(surface, pygame.Color(ui['highlight_color']),
                                  Rect(x, y, slot_w, ui['bottom_bar_height']), 2)
