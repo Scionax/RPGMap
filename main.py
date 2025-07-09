@@ -88,6 +88,8 @@ class MapTool:
         self.asset_scroll = 0
         self.selected_asset = 0
         self.dragging_item = None
+        self.left_button_down = False
+        self.right_button_down = False
         self.load_group_icons()
 
     def load_group_icons(self):
@@ -141,14 +143,20 @@ class MapTool:
                         self.asset_scroll = min(max_scroll, self.asset_scroll + 1)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
+                    self.left_button_down = True
                     self.left_click(event.pos)
                 elif event.button == 3:
+                    self.right_button_down = True
                     self.right_click(event.pos)
                 elif event.button == 2:
                     self.dragging = True
                     self.last_mouse = event.pos
             elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 2:
+                if event.button == 1:
+                    self.left_button_down = False
+                elif event.button == 3:
+                    self.right_button_down = False
+                elif event.button == 2:
                     self.dragging = False
             elif event.type == pygame.MOUSEMOTION:
                 if getattr(self, 'dragging', False):
@@ -158,6 +166,10 @@ class MapTool:
                     self.camera[0] -= dx / self.zoom
                     self.camera[1] -= dy / self.zoom
                     self.last_mouse = event.pos
+                if self.left_button_down:
+                    self.left_click(event.pos)
+                if self.right_button_down:
+                    self.right_click(event.pos)
 
     def world_to_screen(self, x, y):
         return int((x - self.camera[0]) * self.zoom), int((y - self.camera[1]) * self.zoom)
