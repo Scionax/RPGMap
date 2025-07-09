@@ -4,7 +4,7 @@ import yaml
 import pygame
 from pygame import Rect
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 
 def load_image(path, size=(32, 32)):
@@ -111,6 +111,8 @@ class MapTool:
         self.init_menu()
         self.load_group_icons()
 
+        self.drag_offset = (0, 0)
+
     def load_group_icons(self):
         for g in self.config.tile_groups + self.config.brush_groups:
             # icons already loaded in Group constructor
@@ -168,12 +170,9 @@ class MapTool:
                         self.selected_asset = 0
                         self.asset_scroll = 0
                 elif event.key == pygame.K_PAGEUP:
-                    self.asset_scroll = max(0, self.asset_scroll - 1)
+                    self.cycle_selected_asset(-1)
                 elif event.key == pygame.K_PAGEDOWN:
-                    groups = self.get_active_groups()
-                    assets = groups[self.selected_group].assets
-                    max_scroll = max(0, len(assets) - self.config.ui['left_strip_visible_rows'])
-                    self.asset_scroll = min(max_scroll, self.asset_scroll + 1)
+                    self.cycle_selected_asset(1)
                 elif event.key == pygame.K_TAB:
                     self.show_ui = not self.show_ui
                 elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
@@ -182,6 +181,11 @@ class MapTool:
                     self.reload_config()
                 elif event.key == pygame.K_ESCAPE:
                     self.running = False
+                elif event.key == pygame.K_SPACE and self.mode == 4:
+                    mx, my = pygame.mouse.get_pos()
+                    wx, wy = self.screen_to_world(mx, my)
+                    self.brush_items.append(BrushItem(self.selected_group, self.selected_asset, wx, wy))
+                    self.unsaved_state = True
             elif event.type == pygame.MOUSEWHEEL:
                 if pygame.key.get_mods() & pygame.KMOD_CTRL:
                     if event.y > 0:
@@ -190,17 +194,24 @@ class MapTool:
                         self.zoom = self.zoom_levels[min(len(self.zoom_levels)-1, self.zoom_levels.index(self.zoom)+1)]
                     self.clamp_camera()
                 else:
-                    if event.y > 0:
-                        self.asset_scroll = max(0, self.asset_scroll - 1)
-                    else:
-                        groups = self.get_active_groups()
-                        assets = groups[self.selected_group].assets
-                        max_scroll = max(0, len(assets) - self.config.ui['left_strip_visible_rows'])
-                        self.asset_scroll = min(max_scroll, self.asset_scroll + 1)
+                    self.cycle_selected_asset(-event.y)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
+                if event.button in (4, 5):
+                    delta = 1 if event.button == 4 else -1
+                    if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                        if delta > 0:
+                            self.zoom = self.zoom_levels[max(0, self.zoom_levels.index(self.zoom)-1)]
+                        else:
+                            self.zoom = self.zoom_levels[min(len(self.zoom_levels)-1, self.zoom_levels.index(self.zoom)+1)]
+                        self.clamp_camera()
+                    else:
+                        self.cycle_selected_asset(delta)
+                elif event.button == 1:
                     self.left_button_down = True
-                    self.left_click(event.pos)
+                    if self.mode < 4:
+                        self.left_click(event.pos)
+                    else:
+                        self.start_drag(event.pos)
                 elif event.button == 3:
                     self.right_button_down = True
                     self.right_click(event.pos)
@@ -210,6 +221,8 @@ class MapTool:
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     self.left_button_down = False
+                    if self.mode == 4:
+                        self.dragging_item = None
                 elif event.button == 3:
                     self.right_button_down = False
                 elif event.button == 2:
@@ -223,7 +236,12 @@ class MapTool:
                     self.camera[1] -= dy / self.zoom
                     self.clamp_camera()
                     self.last_mouse = event.pos
-                if self.left_button_down:
+                if self.mode == 4 and self.left_button_down and self.dragging_item:
+                    mx, my = self.screen_to_world(*event.pos)
+                    self.dragging_item.x = mx - self.drag_offset[0]
+                    self.dragging_item.y = my - self.drag_offset[1]
+                    self.unsaved_state = True
+                elif self.left_button_down and self.mode < 4:
                     self.left_click(event.pos)
                 if self.right_button_down:
                     self.right_click(event.pos)
@@ -244,6 +262,17 @@ class MapTool:
         self.camera[0] = max(-128, min(self.camera[0], max_x))
         self.camera[1] = max(-128, min(self.camera[1], max_y))
 
+    def cycle_selected_asset(self, delta):
+        groups = self.get_active_groups()
+        assets = groups[self.selected_group].assets
+        if not assets:
+            return
+        self.selected_asset = max(0, min(len(assets)-1, self.selected_asset + delta))
+        if self.selected_asset < self.asset_scroll:
+            self.asset_scroll = self.selected_asset
+        elif self.selected_asset >= self.asset_scroll + self.config.ui['left_strip_visible_rows']:
+            self.asset_scroll = self.selected_asset - self.config.ui['left_strip_visible_rows'] + 1
+
     def left_click(self, pos):
         x, y = self.screen_to_world(*pos)
         if self.mode < 4:
@@ -254,9 +283,17 @@ class MapTool:
             idx = self.selected_asset
             self.layers[self.mode-1].paint(tile_x, tile_y, (self.selected_group, idx))
             self.unsaved_map = True
-        else:
-            self.brush_items.append(BrushItem(self.selected_group, self.selected_asset, x, y))
-            self.unsaved_state = True
+
+    def start_drag(self, pos):
+        x, y = self.screen_to_world(*pos)
+        for item in reversed(self.brush_items):
+            g = self.get_active_groups()[item.group_idx]
+            img = g.assets[item.asset_idx]
+            rect = Rect(item.x, item.y, img.get_width(), img.get_height())
+            if rect.collidepoint(x, y):
+                self.dragging_item = item
+                self.drag_offset = (x - item.x, y - item.y)
+                break
 
     def right_click(self, pos):
         x, y = self.screen_to_world(*pos)
@@ -428,14 +465,56 @@ class MapTool:
         tk.Button(dlg, text='OK', command=apply).grid(row=4, column=0, columnspan=2, pady=5)
 
     def open_save_map_dialog(self):
-        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', initialfile='map.json', parent=self.tk_root)
-        if path:
+        os.makedirs('maps', exist_ok=True)
+        dlg = tk.Toplevel(self.tk_root)
+        dlg.title('Save Map')
+        dlg.grab_set()
+
+        tk.Label(dlg, text='Filename:').pack()
+        name_var = tk.StringVar(value='map.json')
+        entry = tk.Entry(dlg, textvariable=name_var)
+        entry.pack(fill=tk.X, padx=5)
+
+        listbox = tk.Listbox(dlg, height=10)
+        for fn in sorted(f for f in os.listdir('maps') if f.endswith('.json')):
+            listbox.insert(tk.END, fn)
+        listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        def on_select(event=None):
+            sel = listbox.curselection()
+            if sel:
+                name_var.set(listbox.get(sel[0]))
+        listbox.bind('<<ListboxSelect>>', on_select)
+
+        def save_action():
+            fname = name_var.get()
+            if not fname.endswith('.json'):
+                fname += '.json'
+            path = os.path.join('maps', fname)
             self.save_map(path)
+            dlg.destroy()
+
+        tk.Button(dlg, text='Save', command=save_action).pack(pady=5)
 
     def open_load_map_dialog(self):
-        path = filedialog.askopenfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', parent=self.tk_root)
-        if path:
-            self.load_map(path)
+        os.makedirs('maps', exist_ok=True)
+        dlg = tk.Toplevel(self.tk_root)
+        dlg.title('Load Map')
+        dlg.grab_set()
+
+        listbox = tk.Listbox(dlg, height=10)
+        for fn in sorted(f for f in os.listdir('maps') if f.endswith('.json')):
+            listbox.insert(tk.END, fn)
+        listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        def load_action():
+            sel = listbox.curselection()
+            if sel:
+                path = os.path.join('maps', listbox.get(sel[0]))
+                self.load_map(path)
+            dlg.destroy()
+
+        tk.Button(dlg, text='Load', command=load_action).pack(pady=5)
 
     def clear_map_prompt(self):
         if self.unsaved_map:
