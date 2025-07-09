@@ -84,6 +84,10 @@ class MapTool:
         self.running = True
         self.screen = pygame.display.set_mode((800, 600))
         pygame.display.set_caption('RPG Map Tool')
+        self.tk_root = tk.Tk()
+        self.tk_root.title('RPG Map Tool')
+        self.tk_root.geometry('200x1')
+        self.tk_root.protocol('WM_DELETE_WINDOW', self.exit_program)
         self.camera = [0,0]
         self.show_ui = True
         self.selected_group = 0
@@ -95,10 +99,7 @@ class MapTool:
         self.unsaved_map = False
         self.unsaved_state = False
         self.font = pygame.font.Font(None, 24)
-        self.menu_bar_height = 24
-        self.open_menu = None
-        self.menu_rects = {}
-        self.dropdown_rects = {}
+        self.menu_bar_height = 0
         self.init_menu()
         self.load_group_icons()
 
@@ -108,36 +109,40 @@ class MapTool:
             pass
 
     def init_menu(self):
-        self.menu_data = {
-            'File': [
-                ('Exit', self.exit_program)
-            ],
-            'Mode': [
-                ('Layer 1', lambda: self.set_mode(1)),
-                ('Layer 2', lambda: self.set_mode(2)),
-                ('Layer 3', lambda: self.set_mode(3)),
-                ('Play', lambda: self.set_mode(4))
-            ],
-            'Map': [
-                ('Preferences', self.open_preferences_dialog),
-                ('Save Map', self.open_save_map_dialog),
-                ('Load Map', self.open_load_map_dialog),
-                ('Clear Map', self.clear_map_prompt)
-            ],
-            'Session': [
-                ('Save State', self.open_save_state_dialog),
-                ('Load State', self.open_load_state_dialog),
-                ('Clear State', self.clear_state_prompt)
-            ]
-        }
+        menubar = tk.Menu(self.tk_root)
 
-    def get_menu_items(self, menu_name):
-        if menu_name == 'File':
-            return [
-                ('Hide UI' if self.show_ui else 'Show UI', self.toggle_ui),
-                ('Exit', self.exit_program)
-            ]
-        return self.menu_data.get(menu_name, [])
+        self.file_menu = tk.Menu(menubar, tearoff=0)
+        self.update_file_menu()
+        menubar.add_cascade(label='File', menu=self.file_menu)
+
+        mode_menu = tk.Menu(menubar, tearoff=0)
+        mode_menu.add_command(label='Layer 1', command=lambda: self.set_mode(1))
+        mode_menu.add_command(label='Layer 2', command=lambda: self.set_mode(2))
+        mode_menu.add_command(label='Layer 3', command=lambda: self.set_mode(3))
+        mode_menu.add_command(label='Play', command=lambda: self.set_mode(4))
+        menubar.add_cascade(label='Mode', menu=mode_menu)
+
+        map_menu = tk.Menu(menubar, tearoff=0)
+        map_menu.add_command(label='Preferences', command=self.open_preferences_dialog)
+        map_menu.add_command(label='Save Map', command=self.open_save_map_dialog)
+        map_menu.add_command(label='Load Map', command=self.open_load_map_dialog)
+        map_menu.add_command(label='Clear Map', command=self.clear_map_prompt)
+        menubar.add_cascade(label='Map', menu=map_menu)
+
+        session_menu = tk.Menu(menubar, tearoff=0)
+        session_menu.add_command(label='Save State', command=self.open_save_state_dialog)
+        session_menu.add_command(label='Load State', command=self.open_load_state_dialog)
+        session_menu.add_command(label='Clear State', command=self.clear_state_prompt)
+        menubar.add_cascade(label='Session', menu=session_menu)
+
+        self.tk_root.config(menu=menubar)
+        self.menubar = menubar
+
+    def update_file_menu(self):
+        self.file_menu.delete(0, tk.END)
+        self.file_menu.add_command(label='Hide UI' if self.show_ui else 'Show UI', command=self.toggle_ui)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='Exit', command=self.exit_program)
 
     def get_active_groups(self):
         return self.config.tile_groups if self.mode < 4 else self.config.brush_groups
@@ -175,6 +180,7 @@ class MapTool:
                         self.zoom = self.zoom_levels[max(0, self.zoom_levels.index(self.zoom)-1)]
                     else:
                         self.zoom = self.zoom_levels[min(len(self.zoom_levels)-1, self.zoom_levels.index(self.zoom)+1)]
+                    self.clamp_camera()
                 else:
                     if event.y > 0:
                         self.asset_scroll = max(0, self.asset_scroll - 1)
@@ -185,9 +191,8 @@ class MapTool:
                         self.asset_scroll = min(max_scroll, self.asset_scroll + 1)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    if not self.handle_menu_click(event.pos):
-                        self.left_button_down = True
-                        self.left_click(event.pos)
+                    self.left_button_down = True
+                    self.left_click(event.pos)
                 elif event.button == 3:
                     self.right_button_down = True
                     self.right_click(event.pos)
@@ -208,10 +213,10 @@ class MapTool:
                     dy = my - self.last_mouse[1]
                     self.camera[0] -= dx / self.zoom
                     self.camera[1] -= dy / self.zoom
+                    self.clamp_camera()
                     self.last_mouse = event.pos
                 if self.left_button_down:
-                    if not self.handle_menu_motion(event.pos):
-                        self.left_click(event.pos)
+                    self.left_click(event.pos)
                 if self.right_button_down:
                     self.right_click(event.pos)
 
@@ -220,6 +225,16 @@ class MapTool:
 
     def screen_to_world(self, x, y):
         return x / self.zoom + self.camera[0], y / self.zoom + self.camera[1]
+
+    def clamp_camera(self):
+        map_w = self.map_tiles_x * self.grid_size
+        map_h = self.map_tiles_y * self.grid_size
+        vis_w = self.screen.get_width() / self.zoom
+        vis_h = self.screen.get_height() / self.zoom
+        max_x = max(-128, map_w - vis_w + 128)
+        max_y = max(-128, map_h - vis_h + 128)
+        self.camera[0] = max(-128, min(self.camera[0], max_x))
+        self.camera[1] = max(-128, min(self.camera[1], max_y))
 
     def left_click(self, pos):
         x, y = self.screen_to_world(*pos)
@@ -283,7 +298,6 @@ class MapTool:
 
     def draw_ui(self):
         ui = self.config.ui
-        self.draw_menu_bar()
         bottom_rect = Rect((self.screen.get_width()-ui['bottom_bar_width'])//2,
                            self.screen.get_height()-ui['bottom_bar_height'],
                            ui['bottom_bar_width'], ui['bottom_bar_height'])
@@ -312,57 +326,6 @@ class MapTool:
                 pygame.draw.rect(self.screen, pygame.Color(ui['highlight_color']),
                                  Rect(0, self.menu_bar_height + idx*ui['tile_preview_size'], ui['left_strip_width'], ui['tile_preview_size']), 2)
 
-    def draw_menu_bar(self):
-        bar_rect = Rect(0, 0, self.screen.get_width(), self.menu_bar_height)
-        pygame.draw.rect(self.screen, (40, 40, 40), bar_rect)
-        x = 5
-        self.menu_rects.clear()
-        for label in self.menu_data.keys():
-            surf = self.font.render(label, True, (255,255,255))
-            rect = surf.get_rect()
-            rect.topleft = (x, (self.menu_bar_height-rect.height)//2)
-            self.screen.blit(surf, rect.topleft)
-            self.menu_rects[label] = rect
-            x += rect.width + 15
-        if self.open_menu:
-            items = self.get_menu_items(self.open_menu)
-            max_w = max(self.font.size(text)[0] for text,_ in items) + 20
-            self.dropdown_rects.clear()
-            for idx, (text, cb) in enumerate(items):
-                item_rect = Rect(self.menu_rects[self.open_menu].x, self.menu_bar_height + idx*self.menu_bar_height, max_w, self.menu_bar_height)
-                pygame.draw.rect(self.screen, (60,60,60), item_rect)
-                surf = self.font.render(text, True, (255,255,255))
-                self.screen.blit(surf, (item_rect.x+5, item_rect.y+(self.menu_bar_height-surf.get_height())//2))
-                self.dropdown_rects[(self.open_menu, idx)] = item_rect
-
-    def handle_menu_click(self, pos):
-        if self.open_menu:
-            for (menu, idx), rect in self.dropdown_rects.items():
-                if rect.collidepoint(pos):
-                    items = self.get_menu_items(menu)
-                    if idx < len(items):
-                        items[idx][1]()
-                    self.open_menu = None
-                    return True
-        for label, rect in self.menu_rects.items():
-            if rect.collidepoint(pos):
-                if self.open_menu == label:
-                    self.open_menu = None
-                else:
-                    self.open_menu = label
-                return True
-        if self.open_menu:
-            self.open_menu = None
-        return False
-
-    def handle_menu_motion(self, pos):
-        if self.open_menu:
-            for rect in list(self.dropdown_rects.values()) + [self.menu_rects[self.open_menu]]:
-                if rect.collidepoint(pos):
-                    return True
-            return False
-        else:
-            return any(rect.collidepoint(pos) for rect in self.menu_rects.values())
 
     def quick_save(self):
         if self.mode < 4:
@@ -402,6 +365,7 @@ class MapTool:
 
     def toggle_ui(self):
         self.show_ui = not self.show_ui
+        self.update_file_menu()
 
     def set_mode(self, mode_idx: int):
         self.mode = mode_idx
@@ -436,6 +400,7 @@ class MapTool:
                 self.layers = [Layer(self.map_tiles_x, self.map_tiles_y) for _ in range(3)]
                 self.camera = [0, 0]
                 self.unsaved_map = False
+            self.clamp_camera()
         finally:
             root.destroy()
 
@@ -506,9 +471,12 @@ class MapTool:
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
+            self.tk_root.update_idletasks()
+            self.tk_root.update()
             self.handle_events()
             self.draw()
             clock.tick(60)
+        self.tk_root.destroy()
 
 def main():
     tool = MapTool()
