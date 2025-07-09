@@ -4,7 +4,7 @@ import yaml
 import pygame
 from pygame import Rect
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import filedialog, messagebox
 
 
 def load_image(path, size=(32, 32)):
@@ -69,6 +69,17 @@ class BrushItem:
 
 class MapTool:
     def __init__(self):
+        # Create Tkinter root and embed the Pygame window inside it
+        self.tk_root = tk.Tk()
+        self.tk_root.title('RPG Map Tool')
+        self.tk_root.protocol('WM_DELETE_WINDOW', self.exit_program)
+        self.embed = tk.Frame(self.tk_root, width=800, height=600)
+        self.embed.pack(fill=tk.BOTH, expand=True)
+        self.tk_root.geometry('800x600')
+        # Realize the frame so we can fetch its window id
+        self.tk_root.update()
+        os.environ['SDL_WINDOWID'] = str(self.embed.winfo_id())
+
         pygame.init()
         self.config = Config()
         self.zoom_levels = self.config.general['zoom_levels']
@@ -84,10 +95,7 @@ class MapTool:
         self.running = True
         self.screen = pygame.display.set_mode((800, 600))
         pygame.display.set_caption('RPG Map Tool')
-        self.tk_root = tk.Tk()
-        self.tk_root.title('RPG Map Tool')
-        self.tk_root.geometry('200x1')
-        self.tk_root.protocol('WM_DELETE_WINDOW', self.exit_program)
+
         self.camera = [0,0]
         self.show_ui = True
         self.selected_group = 0
@@ -383,17 +391,31 @@ class MapTool:
 
     # ------------------- Menu callbacks -------------------
     def open_preferences_dialog(self):
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            zoom = simpledialog.askfloat('Preferences', 'Zoom:', initialvalue=self.zoom, parent=root)
-            if zoom is not None:
-                self.zoom = zoom
-            pan = simpledialog.askinteger('Preferences', 'Pan speed:', initialvalue=self.pan_speed, parent=root)
-            if pan is not None:
-                self.pan_speed = pan
-            width = simpledialog.askinteger('Preferences', 'Map width:', initialvalue=self.map_tiles_x * self.grid_size, parent=root)
-            height = simpledialog.askinteger('Preferences', 'Map height:', initialvalue=self.map_tiles_y * self.grid_size, parent=root)
+        dlg = tk.Toplevel(self.tk_root)
+        dlg.title('Preferences')
+        dlg.grab_set()
+
+        tk.Label(dlg, text='Zoom:').grid(row=0, column=0, sticky='e')
+        zoom_var = tk.DoubleVar(value=self.zoom)
+        tk.Entry(dlg, textvariable=zoom_var).grid(row=0, column=1)
+
+        tk.Label(dlg, text='Pan speed:').grid(row=1, column=0, sticky='e')
+        pan_var = tk.IntVar(value=self.pan_speed)
+        tk.Entry(dlg, textvariable=pan_var).grid(row=1, column=1)
+
+        tk.Label(dlg, text='Map width:').grid(row=2, column=0, sticky='e')
+        width_var = tk.IntVar(value=self.map_tiles_x * self.grid_size)
+        tk.Entry(dlg, textvariable=width_var).grid(row=2, column=1)
+
+        tk.Label(dlg, text='Map height:').grid(row=3, column=0, sticky='e')
+        height_var = tk.IntVar(value=self.map_tiles_y * self.grid_size)
+        tk.Entry(dlg, textvariable=height_var).grid(row=3, column=1)
+
+        def apply():
+            self.zoom = zoom_var.get()
+            self.pan_speed = pan_var.get()
+            width = width_var.get()
+            height = height_var.get()
             if width and height:
                 self.map_tiles_x = width // self.grid_size
                 self.map_tiles_y = height // self.grid_size
@@ -401,70 +423,41 @@ class MapTool:
                 self.camera = [0, 0]
                 self.unsaved_map = False
             self.clamp_camera()
-        finally:
-            root.destroy()
+            dlg.destroy()
+
+        tk.Button(dlg, text='OK', command=apply).grid(row=4, column=0, columnspan=2, pady=5)
 
     def open_save_map_dialog(self):
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', initialfile='map.json', parent=root)
-            if path:
-                self.save_map(path)
-        finally:
-            root.destroy()
+        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', initialfile='map.json', parent=self.tk_root)
+        if path:
+            self.save_map(path)
 
     def open_load_map_dialog(self):
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            path = filedialog.askopenfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', parent=root)
-            if path:
-                self.load_map(path)
-        finally:
-            root.destroy()
+        path = filedialog.askopenfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='maps', parent=self.tk_root)
+        if path:
+            self.load_map(path)
 
     def clear_map_prompt(self):
         if self.unsaved_map:
-            root = tk.Tk()
-            root.withdraw()
-            try:
-                if messagebox.askyesno('Clear Map?', 'Unsaved changes! Clear anyway?', parent=root):
-                    self.clear_map()
-            finally:
-                root.destroy()
+            if messagebox.askyesno('Clear Map?', 'Unsaved changes! Clear anyway?', parent=self.tk_root):
+                self.clear_map()
         else:
             self.clear_map()
 
     def open_save_state_dialog(self):
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='map-states', initialfile='state.json', parent=root)
-            if path:
-                self.save_state(path)
-        finally:
-            root.destroy()
+        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='map-states', initialfile='state.json', parent=self.tk_root)
+        if path:
+            self.save_state(path)
 
     def open_load_state_dialog(self):
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            path = filedialog.askopenfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='map-states', parent=root)
-            if path:
-                self.load_state(path)
-        finally:
-            root.destroy()
+        path = filedialog.askopenfilename(defaultextension='.json', filetypes=[('JSON','*.json')], initialdir='map-states', parent=self.tk_root)
+        if path:
+            self.load_state(path)
 
     def clear_state_prompt(self):
         if self.unsaved_state:
-            root = tk.Tk()
-            root.withdraw()
-            try:
-                if messagebox.askyesno('Clear State?', 'Unsaved changes! Clear anyway?', parent=root):
-                    self.clear_state()
-            finally:
-                root.destroy()
+            if messagebox.askyesno('Clear State?', 'Unsaved changes! Clear anyway?', parent=self.tk_root):
+                self.clear_state()
         else:
             self.clear_state()
 
