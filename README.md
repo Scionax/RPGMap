@@ -17,7 +17,7 @@ python3 -m pip install pygame PyYAML
 python3 main.py
 ```
 
-Use the number keys **1-9** to choose a group, scroll the left strip with the mouse wheel, and draw using the left mouse button. Hold the middle mouse button to pan. Press **Tab** to hide/show the UI. `Ctrl+S` saves to a quick file. Press **F1** to open the menu bar for saving/loading maps and states, changing modes, and editing preferences.
+Use the number keys **1-9** to choose a group, scroll the left strip with the mouse wheel, and draw using the left mouse button. Hold the middle mouse button to pan. Press **Tab** to hide/show the UI. `Ctrl+S` saves to a quick file. A standard menu bar at the top of the window provides options for saving/loading maps and states, changing modes, and editing preferences.
 
 Configuration is stored in `config/ui.yaml` which defines tile and brush groups as folders of text files acting as image placeholders.
 
