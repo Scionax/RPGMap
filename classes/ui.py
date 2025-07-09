@@ -46,7 +46,7 @@ class AssetUI:
         assets = groups[self.app.selected_group].assets
         if not assets:
             return
-        self.app.selected_asset = max(0, min(len(assets) - 1, self.app.selected_asset + delta))
+        self.app.selected_asset = (self.app.selected_asset + delta) % len(assets)
         if self.app.selected_asset < self.app.asset_scroll:
             self.app.asset_scroll = self.app.selected_asset
         elif self.app.selected_asset >= self.app.asset_scroll + self.app.config.ui['left_strip_visible_rows']:

@@ -4,7 +4,7 @@ groups:
   tile_groups:
     - key: 1
       id: ground_a
-      icon: icons/groups/ground_a.txt
+      icon: icons/tiles/ground_a/grass1.png
       dir: icons/tiles/ground_a
     - key: 2
       id: ground_b
@@ -28,6 +28,7 @@ ui:
   tile_preview_size: 32
   highlight_color: "#FFD700"
   hotkey_page_keys: [PageUp, PageDown]
+  mouse_scroll_multiplier: 3
 
 general:
   zoom_levels: [0.5, 1, 2]

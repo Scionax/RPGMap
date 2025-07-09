@@ -27,8 +27,11 @@ class InputHandler:
 
     # ---------------- internal handlers -----------------
     def _handle_keydown(self, event):
-        if pygame.K_1 <= event.key <= pygame.K_9:
-            idx = event.key - pygame.K_1
+        if pygame.K_1 <= event.key <= pygame.K_9 or pygame.K_KP1 <= event.key <= pygame.K_KP9:
+            if pygame.K_1 <= event.key <= pygame.K_9:
+                idx = event.key - pygame.K_1
+            else:
+                idx = event.key - pygame.K_KP1
             groups = self.app.get_active_groups()
             if idx < len(groups):
                 self.app.selected_group = idx
@@ -60,7 +63,8 @@ class InputHandler:
                 self.app.zoom = self.app.zoom_levels[min(len(self.app.zoom_levels) - 1, self.app.zoom_levels.index(self.app.zoom) + 1)]
             self.app.clamp_camera()
         else:
-            self.app.wheel_accum += event.y
+            multiplier = self.app.config.ui.get('mouse_scroll_multiplier', 1)
+            self.app.wheel_accum += event.y * multiplier
             while self.app.wheel_accum >= 1:
                 self.app.asset_ui.cycle_selected_asset(-1)
                 self.app.wheel_accum -= 1
@@ -78,7 +82,9 @@ class InputHandler:
                     self.app.zoom = self.app.zoom_levels[min(len(self.app.zoom_levels) - 1, self.app.zoom_levels.index(self.app.zoom) + 1)]
                 self.app.clamp_camera()
             else:
-                self.app.asset_ui.cycle_selected_asset(delta)
+                multiplier = self.app.config.ui.get('mouse_scroll_multiplier', 1)
+                for _ in range(int(multiplier)):
+                    self.app.asset_ui.cycle_selected_asset(delta)
         elif event.button == 1:
             self.app.left_button_down = True
             if self.app.mode < 4:
