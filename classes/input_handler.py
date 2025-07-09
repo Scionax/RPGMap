@@ -9,6 +9,8 @@ class InputHandler:
 
     def __init__(self, app):
         self.app = app
+        # timestamp of last processed scroll event for debouncing
+        self.last_scroll = 0
 
     def handle_events(self) -> None:
         for event in pygame.event.get():
@@ -55,6 +57,13 @@ class InputHandler:
             self.app.brush_items.append(BrushItem(self.app.selected_group, self.app.selected_asset, wx, wy))
             self.app.unsaved_state = True
 
+    def _process_scroll(self, delta: int) -> None:
+        """Cycle assets with a 200ms debounce."""
+        now = pygame.time.get_ticks()
+        if now - self.last_scroll >= 200:
+            self.app.asset_ui.cycle_selected_asset(delta)
+            self.last_scroll = now
+
     def _handle_mousewheel(self, event):
         if pygame.key.get_mods() & pygame.KMOD_CTRL:
             if event.y > 0:
@@ -63,28 +72,20 @@ class InputHandler:
                 self.app.zoom = self.app.zoom_levels[min(len(self.app.zoom_levels) - 1, self.app.zoom_levels.index(self.app.zoom) + 1)]
             self.app.clamp_camera()
         else:
-            multiplier = self.app.config.ui.get('mouse_scroll_multiplier', 1)
-            self.app.wheel_accum += event.y * multiplier
-            while self.app.wheel_accum >= 1:
-                self.app.asset_ui.cycle_selected_asset(-1)
-                self.app.wheel_accum -= 1
-            while self.app.wheel_accum <= -1:
-                self.app.asset_ui.cycle_selected_asset(1)
-                self.app.wheel_accum += 1
+            delta = -1 if event.y > 0 else 1
+            self._process_scroll(delta)
 
     def _handle_mousebuttondown(self, event):
         if event.button in (4, 5):
-            delta = 1 if event.button == 4 else -1
+            delta = -1 if event.button == 4 else 1
             if pygame.key.get_mods() & pygame.KMOD_CTRL:
-                if delta > 0:
+                if delta < 0:
                     self.app.zoom = self.app.zoom_levels[max(0, self.app.zoom_levels.index(self.app.zoom) - 1)]
                 else:
                     self.app.zoom = self.app.zoom_levels[min(len(self.app.zoom_levels) - 1, self.app.zoom_levels.index(self.app.zoom) + 1)]
                 self.app.clamp_camera()
             else:
-                multiplier = self.app.config.ui.get('mouse_scroll_multiplier', 1)
-                for _ in range(int(multiplier)):
-                    self.app.asset_ui.cycle_selected_asset(delta)
+                self._process_scroll(delta)
         elif event.button == 1:
             self.app.left_button_down = True
             if self.app.mode < 4:

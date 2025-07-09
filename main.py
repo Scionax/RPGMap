@@ -29,6 +29,11 @@ class MapTool:
         os.environ['SDL_WINDOWID'] = str(self.embed.winfo_id())
 
         pygame.init()
+        # initialize a display before loading images so convert_alpha works
+        self.screen = pygame.display.set_mode((800, 600))
+        pygame.display.set_caption('RPG Map Tool')
+
+        # configuration may load images that rely on a valid display
         self.config = Config()
         self.zoom_levels = self.config.general['zoom_levels']
         self.zoom = self.zoom_levels[1]
@@ -41,8 +46,6 @@ class MapTool:
         self.brush_items: list[BrushItem] = []
         self.mode = 1
         self.running = True
-        self.screen = pygame.display.set_mode((800, 600))
-        pygame.display.set_caption('RPG Map Tool')
 
         self.camera = [0, 0]
         self.show_ui = True
@@ -62,7 +65,6 @@ class MapTool:
         self.input_handler = InputHandler(self)
 
         self.drag_offset = (0, 0)
-        self.wheel_accum = 0.0
 
     # ---- Utility methods ----
     def get_active_groups(self):
