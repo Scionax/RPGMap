@@ -3,6 +3,7 @@ import json
 import yaml
 import pygame
 from pygame import Rect
+import pygame_menu
 
 
 def load_image(path, size=(32, 32)):
@@ -90,6 +91,8 @@ class MapTool:
         self.dragging_item = None
         self.left_button_down = False
         self.right_button_down = False
+        self.unsaved_map = False
+        self.unsaved_state = False
         self.load_group_icons()
 
     def load_group_icons(self):
@@ -119,6 +122,8 @@ class MapTool:
                     assets = groups[self.selected_group].assets
                     max_scroll = max(0, len(assets) - self.config.ui['left_strip_visible_rows'])
                     self.asset_scroll = min(max_scroll, self.asset_scroll + 1)
+                elif event.key == pygame.K_F1:
+                    self.open_main_menu()
                 elif event.key == pygame.K_TAB:
                     self.show_ui = not self.show_ui
                 elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
@@ -186,8 +191,10 @@ class MapTool:
             asset = groups[self.selected_group].assets[self.selected_asset]
             idx = self.selected_asset
             self.layers[self.mode-1].paint(tile_x, tile_y, (self.selected_group, idx))
+            self.unsaved_map = True
         else:
             self.brush_items.append(BrushItem(self.selected_group, self.selected_asset, x, y))
+            self.unsaved_state = True
 
     def right_click(self, pos):
         x, y = self.screen_to_world(*pos)
@@ -195,6 +202,7 @@ class MapTool:
             tile_x = int(x // self.grid_size)
             tile_y = int(y // self.grid_size)
             self.layers[self.mode-1].erase(tile_x, tile_y)
+            self.unsaved_map = True
         else:
             for item in reversed(self.brush_items):
                 g = self.get_active_groups()[item.group_idx]
@@ -202,6 +210,7 @@ class MapTool:
                 rect = Rect(item.x, item.y, img.get_width(), img.get_height())
                 if rect.collidepoint(x, y):
                     self.brush_items.remove(item)
+                    self.unsaved_state = True
                     break
 
     def draw(self):
@@ -274,26 +283,209 @@ class MapTool:
         data = {f'layer{i+1}': layer.grid for i, layer in enumerate(self.layers)}
         with open(path, 'w') as f:
             json.dump(data, f)
+        self.unsaved_map = False
 
     def load_map(self, path):
         with open(path, 'r') as f:
             data = json.load(f)
         for i in range(3):
             self.layers[i].grid = data.get(f'layer{i+1}', self.layers[i].grid)
+        self.unsaved_map = False
 
     def save_state(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = [{'group': b.group_idx, 'asset': b.asset_idx, 'x': b.x, 'y': b.y} for b in self.brush_items]
         with open(path, 'w') as f:
             json.dump(data, f)
+        self.unsaved_state = False
 
     def load_state(self, path):
         with open(path, 'r') as f:
             data = json.load(f)
         self.brush_items = [BrushItem(d['group'], d['asset'], d['x'], d['y']) for d in data]
+        self.unsaved_state = False
 
     def reload_config(self):
         self.config = Config()
+
+    def toggle_ui(self):
+        self.show_ui = not self.show_ui
+
+    def set_mode(self, mode_idx: int):
+        self.mode = mode_idx
+
+    def clear_map(self):
+        self.layers = [Layer(self.map_tiles_x, self.map_tiles_y) for _ in range(3)]
+        self.unsaved_map = False
+
+    def clear_state(self):
+        self.brush_items = []
+        self.unsaved_state = False
+
+    def exit_program(self):
+        self.running = False
+
+    # ------------------- Menu building -------------------
+    def open_main_menu(self):
+        file_menu = self.build_file_menu()
+        mode_menu = self.build_mode_menu()
+        map_menu = self.build_map_menu()
+        session_menu = self.build_session_menu()
+        menu = pygame_menu.Menu('Main Menu', 400, 300)
+        menu.add.button('File', file_menu)
+        menu.add.button('Mode', mode_menu)
+        menu.add.button('Map', map_menu)
+        menu.add.button('Session', session_menu)
+        menu.add.button('Close', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def build_file_menu(self):
+        menu = pygame_menu.Menu('File', 300, 200)
+        label = 'Hide UI' if self.show_ui else 'Show UI'
+        menu.add.button(label, self.toggle_ui)
+        menu.add.button('Exit', self.exit_program)
+        menu.add.button('Back', pygame_menu.events.BACK)
+        return menu
+
+    def build_mode_menu(self):
+        menu = pygame_menu.Menu('Mode', 300, 200)
+        menu.add.button('Layer 1', lambda: self.set_mode(1))
+        menu.add.button('Layer 2', lambda: self.set_mode(2))
+        menu.add.button('Layer 3', lambda: self.set_mode(3))
+        menu.add.button('Play', lambda: self.set_mode(4))
+        menu.add.button('Back', pygame_menu.events.BACK)
+        return menu
+
+    def build_map_menu(self):
+        menu = pygame_menu.Menu('Map', 300, 250)
+        menu.add.button('Preferences', self.open_preferences_menu)
+        menu.add.button('Save Map', self.open_save_map_menu)
+        menu.add.button('Load Map', self.open_load_map_menu)
+        menu.add.button('Clear Map', self.clear_map_prompt)
+        menu.add.button('Back', pygame_menu.events.BACK)
+        return menu
+
+    def build_session_menu(self):
+        menu = pygame_menu.Menu('Session', 300, 250)
+        menu.add.button('Save State', self.open_save_state_menu)
+        menu.add.button('Load State', self.open_load_state_menu)
+        menu.add.button('Clear State', self.clear_state_prompt)
+        menu.add.button('Back', pygame_menu.events.BACK)
+        return menu
+
+    def open_preferences_menu(self):
+        menu = pygame_menu.Menu('Preferences', 400, 300)
+        zoom_input = menu.add.text_input('Zoom: ', default=str(self.zoom))
+        pan_input = menu.add.text_input('Pan speed: ', default=str(self.pan_speed))
+        width_input = menu.add.text_input('Map width: ', default=str(self.map_tiles_x * self.grid_size))
+        height_input = menu.add.text_input('Map height: ', default=str(self.map_tiles_y * self.grid_size))
+
+        def apply_changes():
+            try:
+                self.zoom = float(zoom_input.get_value())
+                self.pan_speed = int(pan_input.get_value())
+                w = int(width_input.get_value())
+                h = int(height_input.get_value())
+                self.map_tiles_x = w // self.grid_size
+                self.map_tiles_y = h // self.grid_size
+                self.layers = [Layer(self.map_tiles_x, self.map_tiles_y) for _ in range(3)]
+                self.camera = [0, 0]
+                self.unsaved_map = False
+            except Exception:
+                pass
+            menu.disable()
+
+        menu.add.button('Apply', apply_changes)
+        menu.add.button('Cancel', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def open_save_map_menu(self):
+        menu = pygame_menu.Menu('Save Map', 400, 200)
+        textinput = menu.add.text_input('Filename: ', default='map.json')
+
+        def save_act():
+            filename = textinput.get_value()
+            path = os.path.join('maps', filename)
+            self.save_map(path)
+            menu.disable()
+
+        menu.add.button('Save', save_act)
+        menu.add.button('Cancel', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def open_load_map_menu(self):
+        menu = pygame_menu.Menu('Load Map', 400, 200)
+        files = []
+        if os.path.isdir('maps'):
+            files = [f for f in os.listdir('maps') if f.endswith('.json')]
+        if files:
+            selector = menu.add.selector('File: ', [(f, f) for f in files])
+
+            def load_act():
+                filename = selector.get_value()[0][0]
+                path = os.path.join('maps', filename)
+                self.load_map(path)
+                menu.disable()
+
+            menu.add.button('Load', load_act)
+        else:
+            menu.add.label('No maps found')
+        menu.add.button('Cancel', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def clear_map_prompt(self):
+        if self.unsaved_map:
+            menu = pygame_menu.Menu('Clear Map?', 300, 200)
+            menu.add.label('Unsaved changes!')
+            menu.add.button('Confirm', lambda: [self.clear_map(), menu.disable()])
+            menu.add.button('Cancel', pygame_menu.events.BACK)
+            menu.mainloop(self.screen)
+        else:
+            self.clear_map()
+
+    def open_save_state_menu(self):
+        menu = pygame_menu.Menu('Save State', 400, 200)
+        textinput = menu.add.text_input('Filename: ', default='state.json')
+
+        def save_act():
+            filename = textinput.get_value()
+            path = os.path.join('map-states', filename)
+            self.save_state(path)
+            menu.disable()
+
+        menu.add.button('Save', save_act)
+        menu.add.button('Cancel', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def open_load_state_menu(self):
+        menu = pygame_menu.Menu('Load State', 400, 200)
+        files = []
+        if os.path.isdir('map-states'):
+            files = [f for f in os.listdir('map-states') if f.endswith('.json')]
+        if files:
+            selector = menu.add.selector('File: ', [(f, f) for f in files])
+
+            def load_act():
+                filename = selector.get_value()[0][0]
+                path = os.path.join('map-states', filename)
+                self.load_state(path)
+                menu.disable()
+
+            menu.add.button('Load', load_act)
+        else:
+            menu.add.label('No states found')
+        menu.add.button('Cancel', pygame_menu.events.BACK)
+        menu.mainloop(self.screen)
+
+    def clear_state_prompt(self):
+        if self.unsaved_state:
+            menu = pygame_menu.Menu('Clear State?', 300, 200)
+            menu.add.label('Unsaved changes!')
+            menu.add.button('Confirm', lambda: [self.clear_state(), menu.disable()])
+            menu.add.button('Cancel', pygame_menu.events.BACK)
+            menu.mainloop(self.screen)
+        else:
+            self.clear_state()
 
     def run(self):
         clock = pygame.time.Clock()
