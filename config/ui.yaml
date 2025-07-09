@@ -1,0 +1,36 @@
+# Sample UI config
+
+groups:
+  tile_groups:
+    - key: 1
+      id: ground_a
+      icon: icons/groups/ground_a.txt
+      dir: icons/tiles/ground_a
+    - key: 2
+      id: ground_b
+      icon: icons/groups/ground_b.txt
+      dir: icons/tiles/ground_b
+    - key: 3
+      id: water
+      icon: icons/groups/water.txt
+      dir: icons/tiles/water
+  brush_groups:
+    - key: 1
+      id: player_tokens
+      icon: icons/groups/player_tokens.txt
+      dir: icons/brushes/player_tokens
+
+ui:
+  bottom_bar_height: 32
+  bottom_bar_width: 320
+  left_strip_width: 32
+  left_strip_visible_rows: 15
+  tile_preview_size: 32
+  highlight_color: "#FFD700"
+  hotkey_page_keys: [PageUp, PageDown]
+
+general:
+  zoom_levels: [0.5, 1, 2]
+  pan_speed: 5
+  map_size_pixels: [512, 512]
+  grid_size: 32
