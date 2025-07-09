@@ -40,9 +40,14 @@ class Group:
     def load_assets(self):
         if not os.path.isdir(self.dir):
             return
-        files = sorted(
-            [f for f in os.listdir(self.dir) if f.lower().endswith('.txt')]
-        )
+        files = sorted([
+            f
+            for f in os.listdir(self.dir)
+            if any(
+                f.lower().endswith(ext)
+                for ext in (".txt", ".png", ".jpg", ".jpeg", ".bmp", ".gif")
+            )
+        ])
         for fn in files:
             path = os.path.join(self.dir, fn)
             img = load_image(path)
